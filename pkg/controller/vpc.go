@@ -274,10 +274,13 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 	}
 	vpc = cachedVpc.DeepCopy()
 
+	
 	if err = formatVpc(vpc, c); err != nil {
 		klog.Errorf("failed to format vpc %s: %v", key, err)
 		return err
 	}
+
+	// 此处创建了 ovn 的逻辑路由 logical router
 	if err = c.createVpcRouter(key); err != nil {
 		return err
 	}

@@ -497,6 +497,8 @@ func checkAndUpdateExcludeIPs(subnet *kubeovnv1.Subnet) bool {
 }
 
 func (c *Controller) handleSubnetFinalizer(subnet *kubeovnv1.Subnet) (bool, error) {
+
+	// add finalizer
 	if subnet.DeletionTimestamp.IsZero() && !util.ContainsString(subnet.Finalizers, util.ControllerName) {
 		subnet.Finalizers = append(subnet.Finalizers, util.ControllerName)
 		if _, err := c.config.KubeOvnClient.KubeovnV1().Subnets().Update(context.Background(), subnet, metav1.UpdateOptions{}); err != nil {
@@ -514,6 +516,8 @@ func (c *Controller) handleSubnetFinalizer(subnet *kubeovnv1.Subnet) (bool, erro
 	}
 
 	u2oInterconnIP := subnet.Status.U2OInterconnectionIP
+	// DeletionTimestamp 存在，且没有在使用的IP或者只有一个在使用的IP且U2OInterconnectionIP不为空
+	// rm finalizer
 	if !subnet.DeletionTimestamp.IsZero() && (usingIPs == 0 || (usingIPs == 1 && u2oInterconnIP != "")) {
 		subnet.Finalizers = util.RemoveString(subnet.Finalizers, util.ControllerName)
 		if _, err := c.config.KubeOvnClient.KubeovnV1().Subnets().Update(context.Background(), subnet, metav1.UpdateOptions{}); err != nil {
@@ -562,12 +566,14 @@ func (c *Controller) validateVpcBySubnet(subnet *kubeovnv1.Subnet) (*kubeovnv1.V
 		return vpc, err
 	}
 
+	// 标识 Vpc 是否创建完成
 	if !vpc.Status.Standby {
 		err = fmt.Errorf("the vpc '%s' not standby yet", vpc.Name)
 		klog.Error(err)
 		return vpc, err
 	}
 
+	//该子网是否为默认子网
 	if !vpc.Status.Default {
 		for _, ns := range subnet.Spec.Namespaces {
 			if !util.ContainsString(vpc.Spec.Namespaces, ns) {
@@ -666,6 +672,7 @@ func (c *Controller) updateSubnetDHCPOption(subnet *kubeovnv1.Subnet, needRouter
 		}
 	}
 
+	// DHCP config
 	dhcpOptionsUUIDs, err := c.OVNNbClient.UpdateDHCPOptions(subnet, mtu)
 	if err != nil {
 		klog.Errorf("failed to update dhcp options for switch %s, %v", subnet.Name, err)
@@ -723,6 +730,12 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		return err
 	}
 
+	// handle finalizer
+	// 对带有 Finalizer 的对象的第一个删除请求会为其 metadata.deletionTimestamp 设置一个值，但不会真的删除对象。
+	// 一旦此值被设置，finalizers 列表中的值就只能被移除。
+
+	// 当 metadata.deletionTimestamp 字段被设置时，负责监测该对象的各个控制器会通过轮询对该对象的更新请求来执行它们所要处理的所有 Finalizer。
+	// 当所有 Finalizer 都被执行过，资源被删除。
 	deleted, err := c.handleSubnetFinalizer(subnet)
 	if err != nil {
 		klog.Errorf("handle subnet finalizer failed %v", err)
@@ -732,6 +745,7 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		return nil
 	}
 
+	// 更新的是 subnet.status.conditions
 	if err = util.ValidateSubnet(*subnet); err != nil {
 		klog.Errorf("failed to validate subnet %s, %v", subnet.Name, err)
 		c.patchSubnetStatus(subnet, "ValidateLogicalSwitchFailed", err.Error())
@@ -739,6 +753,8 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 	}
 	c.patchSubnetStatus(subnet, "ValidateLogicalSwitchSuccess", "")
 
+	// 存储的是 subnet的ip地址分配信息
+	// subnet ipam process
 	if err := c.ipam.AddOrUpdateSubnet(subnet.Name, subnet.Spec.CIDRBlock, subnet.Spec.Gateway, subnet.Spec.ExcludeIps); err != nil {
 		return err
 	}
@@ -782,6 +798,7 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		return err
 	}
 
+	// EIP SNAT 以及 Underlay 和 Overlay 网络互通
 	needRouter := subnet.Spec.Vlan == "" || subnet.Spec.LogicalGateway ||
 		(subnet.Status.U2OInterconnectionIP != "" && subnet.Spec.U2OInterconnection)
 	// 1. overlay subnet, should add lrp, lrp ip is subnet gw
@@ -805,6 +822,7 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		return err
 	}
 
+	// Multicast-Snoop 配置
 	multicastSnoopFlag := map[string]string{"mcast_snoop": "true", "mcast_querier": "false"}
 	if subnet.Spec.EnableMulicastSnoop {
 		if err := c.OVNNbClient.LogicalSwitchUpdateOtherConfig(subnet.Name, ovsdb.MutateOperationInsert, multicastSnoopFlag); err != nil {
@@ -820,6 +838,7 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 
 	subnet.Status.EnsureStandardConditions()
 
+	// dhcp options
 	if err := c.updateSubnetDHCPOption(subnet, needRouter); err != nil {
 		klog.Errorf("failed to update subnet %s dhcpOptions: %v", subnet.Name, err)
 		return err

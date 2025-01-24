@@ -911,6 +911,7 @@ func (c *Controller) shutdown() {
 func (c *Controller) startWorkers(ctx context.Context) {
 	klog.Info("Starting workers")
 
+	// add vpc worker before add subnet worker
 	go wait.Until(c.runAddVpcWorker, time.Second, ctx.Done())
 
 	go wait.Until(c.runAddOrUpdateVpcNatGwWorker, time.Second, ctx.Done())
@@ -923,6 +924,7 @@ func (c *Controller) startWorkers(ctx context.Context) {
 	go wait.Until(c.runUpdateVpcSubnetWorker, time.Second, ctx.Done())
 
 	// add default/join subnet and wait them ready
+	// 下面处理 subnet 的逻辑 logical switch
 	go wait.Until(c.runAddSubnetWorker, time.Second, ctx.Done())
 	go wait.Until(c.runAddIPPoolWorker, time.Second, ctx.Done())
 	go wait.Until(c.runAddVlanWorker, time.Second, ctx.Done())

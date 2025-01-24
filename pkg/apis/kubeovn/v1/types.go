@@ -13,7 +13,7 @@ import (
 const (
 	ProtocolIPv4 = "IPv4"
 	ProtocolIPv6 = "IPv6"
-	ProtocolDual = "Dual"
+	ProtocolDual = "Dual" // 双协议栈
 
 	GWDistributedType = "distributed"
 	GWCentralizedType = "centralized"
