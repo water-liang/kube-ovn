@@ -48,7 +48,7 @@ type Configuration struct {
 	DefaultU2OInterconnection bool
 
 	ClusterRouter     string
-	NodeSwitch        string
+	NodeSwitch        string // join vpc 名称
 	NodeSwitchCIDR    string
 	NodeSwitchGateway string
 

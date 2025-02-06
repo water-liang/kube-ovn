@@ -573,6 +573,9 @@ func (c *Controller) validateVpcBySubnet(subnet *kubeovnv1.Subnet) (*kubeovnv1.V
 		return vpc, err
 	}
 
+	// 为了方便用户的快速上手使用，Kube-OVN 内置了一个默认子网，
+	// 所有未显式声明子网归属的 Namespace 会自动从默认子网中分配 IP， 并使用默认子网的网络信息
+
 	//该子网是否为默认子网
 	if !vpc.Status.Default {
 		for _, ns := range subnet.Spec.Namespaces {
@@ -588,6 +591,7 @@ func (c *Controller) validateVpcBySubnet(subnet *kubeovnv1.Subnet) (*kubeovnv1.V
 			klog.Errorf("failed to list vpc, %v", err)
 			return vpc, err
 		}
+		// 使用默认子网的 Namespace 不能与其他 VPC 的 Namespace 重叠
 		for _, vpc := range vpcs {
 			if (subnet.Annotations[util.VpcLastName] == "" && subnet.Spec.Vpc != vpc.Name ||
 				subnet.Annotations[util.VpcLastName] != "" && subnet.Annotations[util.VpcLastName] != vpc.Name) &&
@@ -844,6 +848,8 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		return err
 	}
 
+	// LB 配置
+	// 在 switch上配置了LB
 	if c.config.EnableLb && subnet.Name != c.config.NodeSwitch {
 		lbs := []string{
 			vpc.Status.TCPLoadBalancer,
@@ -866,6 +872,7 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		}
 	}
 
+	// 更新对应的资源信息
 	if err := c.reconcileSubnet(subnet); err != nil {
 		klog.Errorf("reconcile subnet for %s failed, %v", subnet.Name, err)
 		return err
@@ -881,7 +888,9 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		return err
 	}
 
+	// 在子网 CRD 中将 private 设置为 true，则该子网将和其他子网以及外部网络隔离，只能进行子网内部的通信
 	if subnet.Spec.Private {
+		// 设置acl 限制外部通信
 		if err := c.OVNNbClient.SetLogicalSwitchPrivate(subnet.Name, subnet.Spec.CIDRBlock, c.config.NodeSwitchCIDR, subnet.Spec.AllowSubnets); err != nil {
 			c.patchSubnetStatus(subnet, "SetPrivateLogicalSwitchFailed", err.Error())
 			return err
@@ -898,6 +907,7 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		c.patchSubnetStatus(subnet, "ResetLogicalSwitchAclSuccess", "")
 	}
 
+	// 更新acl
 	if err := c.OVNNbClient.UpdateLogicalSwitchACL(subnet.Name, subnet.Spec.Acls); err != nil {
 		c.patchSubnetStatus(subnet, "SetLogicalSwitchAclsFailed", err.Error())
 		return err
@@ -905,12 +915,14 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 
 	c.updateVpcStatusQueue.Add(subnet.Spec.Vpc)
 
+	// ippool
 	ippools, err := c.ippoolLister.List(labels.Everything())
 	if err != nil {
 		klog.Errorf("failed to list ippools: %v", err)
 		return err
 	}
 
+	// 更新ippool
 	for _, p := range ippools {
 		if p.Spec.Subnet == subnet.Name {
 			c.addOrUpdateIPPoolQueue.Add(p.Name)

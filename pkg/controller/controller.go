@@ -1080,18 +1080,23 @@ func (c *Controller) startWorkers(ctx context.Context) {
 	go wait.Until(c.runResetIptablesEipWorker, time.Second, ctx.Done())
 	go wait.Until(c.runDelIptablesEipWorker, time.Second, ctx.Done())
 
+	// fip 是映射规则
+	// ovn fip： 一对一 dnat snat，为 vpc 内的 ip 或者 vip 提供公网直接访问能力
 	go wait.Until(c.runAddIptablesFipWorker, time.Second, ctx.Done())
 	go wait.Until(c.runUpdateIptablesFipWorker, time.Second, ctx.Done())
 	go wait.Until(c.runDelIptablesFipWorker, time.Second, ctx.Done())
 
+	// 主要是在 vpc gateway pod中配置对应的iptables 规则
 	go wait.Until(c.runAddIptablesDnatRuleWorker, time.Second, ctx.Done())
 	go wait.Until(c.runUpdateIptablesDnatRuleWorker, time.Second, ctx.Done())
 	go wait.Until(c.runDelIptablesDnatRuleWorker, time.Second, ctx.Done())
 
+	// iptables snat resource
 	go wait.Until(c.runAddIptablesSnatRuleWorker, time.Second, ctx.Done())
 	go wait.Until(c.runUpdateIptablesSnatRuleWorker, time.Second, ctx.Done())
 	go wait.Until(c.runDelIptablesSnatRuleWorker, time.Second, ctx.Done())
 
+	// QOS 资源
 	go wait.Until(c.runAddQoSPolicyWorker, time.Second, ctx.Done())
 	go wait.Until(c.runUpdateQoSPolicyWorker, time.Second, ctx.Done())
 	go wait.Until(c.runDelQoSPolicyWorker, time.Second, ctx.Done())

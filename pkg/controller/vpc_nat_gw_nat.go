@@ -313,6 +313,7 @@ func (c *Controller) processNextAddIptablesDnatRuleWorkItem() bool {
 		var key string
 		var ok bool
 		if key, ok = obj.(string); !ok {
+			// 将item从限速器删除，不再进行重试加入，但还是需要调用Done方法删除item
 			c.addIptablesDnatRuleQueue.Forget(obj)
 			utilruntime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
 			return nil
@@ -696,6 +697,7 @@ func (c *Controller) handleAddIptablesDnatRule(key string) error {
 		klog.Errorf("failed to get eip, %v", err)
 		return err
 	}
+	// 资源重复性检查
 	if dup, err := c.isDnatDuplicated(eip.Spec.NatGwDp, eipName, dnat.Name, dnat.Spec.ExternalPort); dup || err != nil {
 		return err
 	}
@@ -876,22 +878,27 @@ func (c *Controller) handleAddIptablesSnatRule(key string) error {
 		err = fmt.Errorf("failed to get snat v4 internal cidr, original cidr is %s", snat.Spec.InternalCIDR)
 		return err
 	}
+	// 在 vpc gateway pod中配置iptables 规则
 	if err = c.createSnatInPod(eip.Spec.NatGwDp, eip.Status.IP, v4Cidr); err != nil {
 		klog.Errorf("failed to create snat, %v", err)
 		return err
 	}
+	// 更新 snat 状态
 	if err = c.patchSnatStatus(key, eip.Status.IP, eip.Spec.V6ip, eip.Spec.NatGwDp, "", true); err != nil {
 		klog.Errorf("failed to update status for snat %s, %v", key, err)
 		return err
 	}
+	// update snat label
 	if err = c.patchSnatLabel(key, eip); err != nil {
 		klog.Errorf("failed to patch label for snat %s, %v", key, err)
 		return err
 	}
+	// add finalizer
 	if err = c.handleAddIptablesSnatFinalizer(key); err != nil {
 		klog.Errorf("failed to handle add finalizer for snat, %v", err)
 		return err
 	}
+	// 更新 eip 状态
 	if err = c.patchEipStatus(eipName, "", "", "", true); err != nil {
 		// refresh eip nats
 		klog.Errorf("failed to patch snat use eip %s, %v", key, err)
