@@ -1075,6 +1075,8 @@ func (c *Controller) startWorkers(ctx context.Context) {
 	go wait.Until(c.runUpdateVirtualIPWorker, time.Second, ctx.Done())
 	go wait.Until(c.runDelVirtualIPWorker, time.Second, ctx.Done())
 
+	// iptables EIP resource
+	// 仅做 路由 规则的配置
 	go wait.Until(c.runAddIptablesEipWorker, time.Second, ctx.Done())
 	go wait.Until(c.runUpdateIptablesEipWorker, time.Second, ctx.Done())
 	go wait.Until(c.runResetIptablesEipWorker, time.Second, ctx.Done())

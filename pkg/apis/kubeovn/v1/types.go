@@ -550,7 +550,7 @@ type IptablesEipSpec struct {
 	MacAddress     string `json:"macAddress"`
 	NatGwDp        string `json:"natGwDp"`
 	QoSPolicy      string `json:"qosPolicy"`
-	ExternalSubnet string `json:"externalSubnet"`
+	ExternalSubnet string `json:"externalSubnet"` // VPC 网关使用的外部网络
 }
 
 // IptablesEIPCondition describes the state of an object at a certain point.

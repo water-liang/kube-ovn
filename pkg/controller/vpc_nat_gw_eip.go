@@ -227,7 +227,9 @@ func (c *Controller) handleAddIptablesEip(key string) error {
 	var v4ip, v6ip, mac, eipV4Cidr, v4Gw string
 	externalNetwork := util.GetExternalNetwork(cachedEip.Spec.ExternalSubnet)
 	externalProvider := fmt.Sprintf("%s.%s", externalNetwork, attachmentNs)
+	// 作为nic name
 	portName := ovs.PodNameToPortName(cachedEip.Name, cachedEip.Namespace, externalProvider)
+	// 从 externalNetwork的ipam subnet 获取一个ip地址
 	if cachedEip.Spec.V4ip != "" {
 		if v4ip, v6ip, mac, err = c.acquireStaticEip(cachedEip.Name, cachedEip.Namespace, portName, cachedEip.Spec.V4ip, externalNetwork); err != nil {
 			klog.Errorf("failed to acquire static eip, err: %v", err)
@@ -240,14 +242,17 @@ func (c *Controller) handleAddIptablesEip(key string) error {
 			return err
 		}
 	}
+	// 转换成cidr的格式
 	if eipV4Cidr, err = c.getEipV4Cidr(v4ip, externalNetwork); err != nil {
 		klog.Errorf("failed to get eip cidr, err: %v", err)
 		return err
 	}
+	// 获取GW
 	if v4Gw, _, err = c.GetGwBySubnet(externalNetwork); err != nil {
 		klog.Errorf("failed to get gw, err: %v", err)
 		return err
 	}
+	// 仅作了 路由 转换，没有实现nat 功能
 	if err = c.createEipInPod(cachedEip.Spec.NatGwDp, v4Gw, eipV4Cidr); err != nil {
 		klog.Errorf("failed to create eip '%s' in pod, %v", key, err)
 		return err
@@ -259,6 +264,7 @@ func (c *Controller) handleAddIptablesEip(key string) error {
 			return err
 		}
 	}
+	// 更新 eip crd 状态
 	if err = c.createOrUpdateCrdEip(key, v4ip, v6ip, mac, cachedEip.Spec.NatGwDp, cachedEip.Spec.QoSPolicy, externalNetwork); err != nil {
 		klog.Errorf("failed to update eip %s, %v", key, err)
 		return err
