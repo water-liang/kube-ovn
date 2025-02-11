@@ -39,7 +39,7 @@ type Configuration struct {
 	KubeFactoryClient    kubernetes.Interface
 	KubeOvnFactoryClient clientset.Interface
 
-	DefaultLogicalSwitch      string
+	DefaultLogicalSwitch      string // ovn-default sunbet
 	DefaultCIDR               string
 	DefaultGateway            string
 	DefaultExcludeIps         string
@@ -48,7 +48,7 @@ type Configuration struct {
 	DefaultU2OInterconnection bool
 
 	ClusterRouter     string
-	NodeSwitch        string // join vpc 名称
+	NodeSwitch        string // join subnet 名称
 	NodeSwitchCIDR    string
 	NodeSwitchGateway string
 

@@ -183,6 +183,7 @@ func (config *Configuration) Init(nicBridgeMappings map[string]string) error {
 	if err := config.initKubeClient(); err != nil {
 		return err
 	}
+	// 隧道的一些配置
 	if err := config.initNicConfig(nicBridgeMappings); err != nil {
 		return err
 	}

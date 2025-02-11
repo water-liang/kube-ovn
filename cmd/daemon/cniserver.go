@@ -52,6 +52,7 @@ func CmdMain() {
 	if err = daemon.InitMirror(config); err != nil {
 		util.LogFatalAndExit(err, "failed to initialize ovs mirror")
 	}
+	// 创建了ovn0网卡，配置ip地址
 	klog.Info("init node gw")
 	if err = daemon.InitNodeGateway(config); err != nil {
 		util.LogFatalAndExit(err, "failed to initialize node gateway")

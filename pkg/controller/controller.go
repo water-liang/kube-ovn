@@ -759,10 +759,12 @@ func (c *Controller) Run(ctx context.Context) {
 		util.LogFatalAndExit(err, "failed to set NB_Global option node_local_dns_ip")
 	}
 
+	// init default subnet
 	if err := c.InitOVN(); err != nil {
 		util.LogFatalAndExit(err, "failed to initialize ovn resources")
 	}
 
+	// 创建默认vpc ovn-cluster
 	if err := c.InitDefaultVpc(); err != nil {
 		util.LogFatalAndExit(err, "failed to initialize default vpc")
 	}
