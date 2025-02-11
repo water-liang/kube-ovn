@@ -259,6 +259,8 @@ func (c *Controller) handleAddOrUpdateVpcNatGw(key string) error {
 	// check or create statefulset
 	needToCreate := false
 	needToUpdate := false
+	// 查询pvc nat gateway pod
+	// VpcNatGw 使用statefulset管理，可能是因为需要一个稳定的网络标识，deployment在re-schedule后无法保证pod的网络标识
 	oldSts, err := c.config.KubeClient.AppsV1().StatefulSets(c.config.PodNamespace).
 		Get(context.Background(), util.GenNatGwStsName(gw.Name), metav1.GetOptions{})
 	if err != nil {
@@ -430,6 +432,7 @@ func (c *Controller) handleUpdateVpcFloatingIP(natGwKey string) error {
 		return err
 	}
 
+	// 更新 iptables fip status状态
 	for _, fip := range fips {
 		if fip.Status.Redo != natGwCreatedAT {
 			klog.V(3).Infof("redo fip %s", fip.Name)

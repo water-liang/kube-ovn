@@ -914,9 +914,13 @@ func (c *Controller) startWorkers(ctx context.Context) {
 	// add vpc worker before add subnet worker
 	go wait.Until(c.runAddVpcWorker, time.Second, ctx.Done())
 
+	// vpc nat gateway
+	// 启动一个 statefulset的pod 来实现vpc nat gw功能
 	go wait.Until(c.runAddOrUpdateVpcNatGwWorker, time.Second, ctx.Done())
 	go wait.Until(c.runInitVpcNatGwWorker, time.Second, ctx.Done())
 	go wait.Until(c.runDelVpcNatGwWorker, time.Second, ctx.Done())
+
+	// 更新vpc nat gw的相关信息
 	go wait.Until(c.runUpdateVpcFloatingIPWorker, time.Second, ctx.Done())
 	go wait.Until(c.runUpdateVpcEipWorker, time.Second, ctx.Done())
 	go wait.Until(c.runUpdateVpcDnatWorker, time.Second, ctx.Done())
@@ -939,6 +943,7 @@ func (c *Controller) startWorkers(ctx context.Context) {
 		klog.Fatalf("wait default/join subnet ready error: %v", err)
 	}
 
+	//  security group
 	go wait.Until(c.runAddSgWorker, time.Second, ctx.Done())
 	go wait.Until(c.runDelSgWorker, time.Second, ctx.Done())
 	go wait.Until(c.runSyncSgPortsWorker, time.Second, ctx.Done())
@@ -971,6 +976,7 @@ func (c *Controller) startWorkers(ctx context.Context) {
 	go wait.Until(c.runDelVpcWorker, time.Second, ctx.Done())
 	go wait.Until(c.runUpdateVpcStatusWorker, time.Second, ctx.Done())
 
+	// OVN LB
 	if c.config.EnableLb {
 		go wait.Until(c.runAddServiceWorker, time.Second, ctx.Done())
 		// run in a single worker to avoid delete the last vip, which will lead ovn to delete the loadbalancer
