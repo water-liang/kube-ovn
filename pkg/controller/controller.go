@@ -952,6 +952,7 @@ func (c *Controller) startWorkers(ctx context.Context) {
 
 	// run node worker before handle any pods
 	for i := 0; i < c.config.WorkerNum; i++ {
+		// 此处会将 ovn0 网卡加入到 join subnet中
 		go wait.Until(c.runAddNodeWorker, time.Second, ctx.Done())
 		go wait.Until(c.runUpdateNodeWorker, time.Second, ctx.Done())
 		go wait.Until(c.runDeleteNodeWorker, time.Second, ctx.Done())
@@ -996,6 +997,7 @@ func (c *Controller) startWorkers(ctx context.Context) {
 	}
 
 	for i := 0; i < c.config.WorkerNum; i++ {
+		// pod的event 处理
 		go wait.Until(c.runDeletePodWorker, time.Second, ctx.Done())
 		go wait.Until(c.runAddOrUpdatePodWorker, time.Second, ctx.Done())
 		go wait.Until(c.runUpdatePodSecurityWorker, time.Second, ctx.Done())

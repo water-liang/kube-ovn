@@ -47,7 +47,7 @@ type Configuration struct {
 	DefaultLogicalGateway     bool
 	DefaultU2OInterconnection bool
 
-	ClusterRouter     string
+	ClusterRouter     string // ovn-cluster
 	NodeSwitch        string // join subnet 名称
 	NodeSwitchCIDR    string
 	NodeSwitchGateway string

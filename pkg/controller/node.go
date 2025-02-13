@@ -223,6 +223,7 @@ func (c *Controller) handleAddNode(key string) error {
 		return err
 	}
 
+	// node 的 物理ip地址
 	nodeIPv4, nodeIPv6 := util.GetNodeInternalIP(*node)
 	for _, subnet := range subnets {
 		if subnet.Spec.Vpc != c.config.ClusterRouter {
@@ -238,6 +239,8 @@ func (c *Controller) handleAddNode(key string) error {
 		}
 	}
 
+	// ProviderNetwork 提供了主机网卡到物理网络映射的抽象，将同属一个网络的网卡进行统一管理，
+	//  并解决在复杂环境下同机器多网卡、网卡名不一致、对应 Underlay 网络不一致等情况下的配置问题
 	if err = c.handleNodeAnnotationsForProviderNetworks(node); err != nil {
 		klog.Errorf("failed to handle annotations of node %s for provider networks: %v", node.Name, err)
 		return err
@@ -267,12 +270,14 @@ func (c *Controller) handleAddNode(key string) error {
 		}
 	}
 
+	// ovn0 加入到 join switch中
 	ipStr := util.GetStringIP(v4IP, v6IP)
 	if err := c.OVNNbClient.CreateBareLogicalSwitchPort(c.config.NodeSwitch, portName, ipStr, mac); err != nil {
 		klog.Errorf("failed to create logical switch port %s: %v", portName, err)
 		return err
 	}
 
+	// 增加策略路由
 	for _, ip := range strings.Split(ipStr, ",") {
 		if ip == "" {
 			continue

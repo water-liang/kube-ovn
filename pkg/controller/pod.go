@@ -488,6 +488,7 @@ func (c *Controller) getPodKubeovnNets(pod *v1.Pod) ([]*kubeovnNet, error) {
 		return nil, err
 	}
 
+	// multus的网卡
 	attachmentNets, err := c.getPodAttachmentNet(pod)
 	if err != nil {
 		klog.Error(err)
@@ -495,6 +496,7 @@ func (c *Controller) getPodKubeovnNets(pod *v1.Pod) ([]*kubeovnNet, error) {
 	}
 
 	podNets := attachmentNets
+	// 如果pod没有设置默认网卡，则添加默认网卡
 	if _, hasOtherDefaultNet := pod.Annotations[util.DefaultNetworkAnnotation]; !hasOtherDefaultNet {
 		podNets = append(attachmentNets, &kubeovnNet{
 			Type:         providerTypeOriginal,
@@ -539,6 +541,7 @@ func (c *Controller) handleAddOrUpdatePod(key string) (err error) {
 	}
 
 	// check and do hotnoplug nic
+	// 同步当前pod 的网络和 ovn的网路配置
 	if pod, err = c.syncKubeOvnNet(pod, podNets); err != nil {
 		klog.Errorf("failed to sync pod nets %v", err)
 		return err
@@ -549,6 +552,7 @@ func (c *Controller) handleAddOrUpdatePod(key string) (err error) {
 	}
 	needAllocatePodNets := needAllocateSubnets(pod, podNets)
 	if len(needAllocatePodNets) != 0 {
+		// 分配ip地址，创建ovn port,增加pod的anotations
 		if pod, err = c.reconcileAllocateSubnets(pod, needAllocatePodNets); err != nil {
 			klog.Error(err)
 			return err
@@ -577,6 +581,8 @@ func (c *Controller) reconcileAllocateSubnets(pod *v1.Pod, needAllocatePodNets [
 	var err error
 	var isMigrate, migrated, migratedFail bool
 	var vmKey, srcNodeName, targetNodeName string
+	// 针对 Kubevirt 创建的 VM 实例，kube-ovn-controller 可以按照类似 StatefulSet Pod 的方式进行 IP 地址分配和管理。
+	// 以达到 VM 实例在生命周期内启停，升级，迁移等操作过程中地址固定不变，更符虚拟化合用户的实际使用体验
 	if isVMPod && c.config.EnableKeepVMIP {
 		vmKey = fmt.Sprintf("%s/%s", namespace, vmName)
 		if isMigrate, migrated, migratedFail, srcNodeName, targetNodeName, err = c.migrateVM(pod, vmKey); err != nil {
@@ -588,6 +594,7 @@ func (c *Controller) reconcileAllocateSubnets(pod *v1.Pod, needAllocatePodNets [
 	patch := util.KVPatch{}
 	for _, podNet := range needAllocatePodNets {
 		// the subnet may changed when alloc static ip from the latter subnet after ns supports multi subnets
+		// 分配ip地址
 		v4IP, v6IP, mac, subnet, err := c.acquireAddress(pod, podNet)
 		if err != nil {
 			c.recorder.Eventf(pod, v1.EventTypeWarning, "AcquireAddressFailed", err.Error())
@@ -595,6 +602,7 @@ func (c *Controller) reconcileAllocateSubnets(pod *v1.Pod, needAllocatePodNets [
 			return nil, err
 		}
 		ipStr := util.GetStringIP(v4IP, v6IP)
+		// pod 的 annotations  网络信息
 		patch[fmt.Sprintf(util.IPAddressAnnotationTemplate, podNet.ProviderName)] = ipStr
 		if mac == "" {
 			patch[fmt.Sprintf(util.MacAddressAnnotationTemplate, podNet.ProviderName)] = nil
@@ -603,15 +611,19 @@ func (c *Controller) reconcileAllocateSubnets(pod *v1.Pod, needAllocatePodNets [
 		}
 		patch[fmt.Sprintf(util.CidrAnnotationTemplate, podNet.ProviderName)] = subnet.Spec.CIDRBlock
 		patch[fmt.Sprintf(util.GatewayAnnotationTemplate, podNet.ProviderName)] = subnet.Spec.Gateway
+
+		// 如果是ovn的子网， logical_switch
 		if isOvnSubnet(podNet.Subnet) {
 			patch[fmt.Sprintf(util.LogicalSwitchAnnotationTemplate, podNet.ProviderName)] = subnet.Name
 			if pod.Annotations[fmt.Sprintf(util.PodNicAnnotationTemplate, podNet.ProviderName)] == "" {
 				patch[fmt.Sprintf(util.PodNicAnnotationTemplate, podNet.ProviderName)] = c.config.PodNicType
 			}
 		} else {
+			// 置空
 			patch[fmt.Sprintf(util.LogicalSwitchAnnotationTemplate, podNet.ProviderName)] = nil
 			patch[fmt.Sprintf(util.PodNicAnnotationTemplate, podNet.ProviderName)] = nil
 		}
+		// 标记 pod 已经分配了ip
 		patch[fmt.Sprintf(util.AllocatedAnnotationTemplate, podNet.ProviderName)] = "true"
 		if isVMPod && c.config.EnableKeepVMIP {
 			patch[fmt.Sprintf(util.VMAnnotationTemplate, podNet.ProviderName)] = vmName
@@ -654,6 +666,7 @@ func (c *Controller) reconcileAllocateSubnets(pod *v1.Pod, needAllocatePodNets [
 			}
 
 			portName := ovs.PodNameToPortName(podName, namespace, podNet.ProviderName)
+			// 复用subnet的dhcpOptions
 			dhcpOptions := &ovs.DHCPOptionsUUIDs{
 				DHCPv4OptionsUUID: subnet.Status.DHCPv4OptionsUUID,
 				DHCPv6OptionsUUID: subnet.Status.DHCPv6OptionsUUID,
@@ -661,6 +674,8 @@ func (c *Controller) reconcileAllocateSubnets(pod *v1.Pod, needAllocatePodNets [
 
 			securityGroupAnnotation := pod.Annotations[fmt.Sprintf(util.SecurityGroupAnnotationTemplate, podNet.ProviderName)]
 			securityGroups := strings.ReplaceAll(securityGroupAnnotation, " ", "")
+
+			// ovn 网络配置
 			if err := c.OVNNbClient.CreateLogicalSwitchPort(subnet.Name, portName, ipStr, mac, podName, pod.Namespace,
 				portSecurity, securityGroupAnnotation, vips, podNet.Subnet.Spec.EnableDHCP, dhcpOptions, subnet.Spec.Vpc); err != nil {
 				c.recorder.Eventf(pod, v1.EventTypeWarning, "CreateOVNPortFailed", err.Error())
@@ -708,12 +723,15 @@ func (c *Controller) reconcileAllocateSubnets(pod *v1.Pod, needAllocatePodNets [
 			}
 		}
 		// CreatePort may fail, so put ip cr creation after CreatePort
+		// 更新ips
 		if err := c.createOrUpdateCrdIPs(podName, ipStr, mac, subnet.Name, pod.Namespace, pod.Spec.NodeName, podNet.ProviderName, podType); err != nil {
 			err = fmt.Errorf("failed to create ips CR %s.%s: %v", podName, pod.Namespace, err)
 			klog.Error(err)
 			return nil, err
 		}
 	}
+
+	// 更新pod 的 annotations
 	if err = util.PatchAnnotations(c.config.KubeClient.CoreV1().Pods(namespace), name, patch); err != nil {
 		if k8serrors.IsNotFound(err) {
 			// Sometimes pod is deleted between kube-ovn configure ovn-nb and patch pod.
@@ -768,6 +786,7 @@ func (c *Controller) reconcileRouteSubnets(pod *v1.Pod, needRoutePodNets []*kube
 		podIP = pod.Annotations[fmt.Sprintf(util.IPAddressAnnotationTemplate, podNet.ProviderName)]
 		subnet = podNet.Subnet
 
+		// 默认
 		if podIP != "" && (subnet.Spec.Vlan == "" || subnet.Spec.LogicalGateway) && subnet.Spec.Vpc == c.config.ClusterRouter {
 			node, err := c.nodesLister.Get(pod.Spec.NodeName)
 			if err != nil {
@@ -819,6 +838,7 @@ func (c *Controller) reconcileRouteSubnets(pod *v1.Pod, needRoutePodNets []*kube
 				}
 
 			} else {
+
 				if subnet.Spec.GatewayType == kubeovnv1.GWDistributedType && pod.Annotations[util.NorthGatewayAnnotation] == "" {
 					nodeTunlIPAddr, err := getNodeTunlIP(node)
 					if err != nil {
@@ -827,6 +847,7 @@ func (c *Controller) reconcileRouteSubnets(pod *v1.Pod, needRoutePodNets []*kube
 					}
 
 					var added bool
+					// ovn的Port Group
 					for _, nodeAddr := range nodeTunlIPAddr {
 						for _, podAddr := range strings.Split(podIP, ",") {
 							if util.CheckProtocol(nodeAddr.String()) != util.CheckProtocol(podAddr) {
@@ -876,6 +897,7 @@ func (c *Controller) reconcileRouteSubnets(pod *v1.Pod, needRoutePodNets []*kube
 						}
 					}
 				} else if c.config.EnableEipSnat {
+					// 删除  src为 pod id 的静态路由
 					if err = c.deleteStaticRouteFromVpc(
 						c.config.ClusterRouter,
 						subnet.Spec.RouteTable,
@@ -1165,12 +1187,14 @@ func (c *Controller) syncKubeOvnNet(pod *v1.Pod, podNets []*kubeovnNet) (*v1.Pod
 		targetPortNameList.Add(portName)
 	}
 
+	// ovn的port
 	ports, err := c.OVNNbClient.ListNormalLogicalSwitchPorts(true, map[string]string{"pod": key})
 	if err != nil {
 		klog.Errorf("failed to list lsps of pod '%s', %v", pod.Name, err)
 		return nil, err
 	}
 
+	// 比较目标端口列表和现有端口列表，找出需要删除的端口，并记录这些端口所使用的子网
 	for _, port := range ports {
 		if !targetPortNameList.Has(port.Name) {
 			portsNeedToDel = append(portsNeedToDel, port.Name)
@@ -1391,6 +1415,7 @@ func (c *Controller) getPodDefaultSubnet(pod *v1.Pod) (*kubeovnv1.Subnet, error)
 		return subnet, nil
 	}
 
+	// 选择namespace的subnet
 	ns, err := c.namespacesLister.Get(pod.Namespace)
 	if err != nil {
 		klog.Errorf("failed to get namespace %s: %v", pod.Namespace, err)
@@ -1455,8 +1480,8 @@ func loadNetConf(bytes []byte) (*multustypes.DelegateNetConf, error) {
 type providerType int
 
 const (
-	providerTypeIPAM providerType = iota
-	providerTypeOriginal
+	providerTypeIPAM     providerType = iota // multus 分配的网络
+	providerTypeOriginal                     // ovn 分配的网络
 )
 
 type kubeovnNet struct {
@@ -1469,6 +1494,7 @@ type kubeovnNet struct {
 
 func (c *Controller) getPodAttachmentNet(pod *v1.Pod) ([]*kubeovnNet, error) {
 	var multusNets []*multustypes.NetworkSelectionElement
+
 	defaultAttachNetworks := pod.Annotations[util.DefaultNetworkAnnotation]
 	if defaultAttachNetworks != "" {
 		attachments, err := util.ParsePodNetworkAnnotation(defaultAttachNetworks, pod.Namespace)
@@ -1495,6 +1521,7 @@ func (c *Controller) getPodAttachmentNet(pod *v1.Pod) ([]*kubeovnNet, error) {
 
 	result := make([]*kubeovnNet, 0, len(multusNets))
 	for _, attach := range multusNets {
+		// 查询 multus 的net-attach-def 资源
 		networkClient := c.config.AttachNetClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(attach.Namespace)
 		network, err := networkClient.Get(context.Background(), attach.Name, metav1.GetOptions{})
 		if err != nil {
@@ -1502,6 +1529,7 @@ func (c *Controller) getPodAttachmentNet(pod *v1.Pod) ([]*kubeovnNet, error) {
 			return nil, err
 		}
 
+		// 读取multus 配置文件
 		netCfg, err := loadNetConf([]byte(network.Spec.Config))
 		if err != nil {
 			klog.Errorf("failed to load config of net-attach-def %s, %v", attach.Name, err)
@@ -1510,6 +1538,7 @@ func (c *Controller) getPodAttachmentNet(pod *v1.Pod) ([]*kubeovnNet, error) {
 
 		// allocate kubeovn network
 		var providerName string
+		// 非OVN
 		if util.IsOvnNetwork(netCfg) {
 			allowLiveMigration := false
 			isDefault := util.IsDefaultNet(pod.Annotations[util.DefaultNetworkAnnotation], attach)
@@ -1622,6 +1651,7 @@ func (c *Controller) acquireAddress(pod *v1.Pod, podNet *kubeovnNet) (string, st
 
 	var macStr *string
 	if isOvnSubnet(podNet.Subnet) {
+		// check mac address
 		mac := pod.Annotations[fmt.Sprintf(util.MacAddressAnnotationTemplate, podNet.ProviderName)]
 		if mac != "" {
 			if _, err := net.ParseMAC(mac); err != nil {
@@ -1633,6 +1663,7 @@ func (c *Controller) acquireAddress(pod *v1.Pod, podNet *kubeovnNet) (string, st
 		macStr = ptr.To("")
 	}
 
+	// 是否指定了ippool
 	ippoolStr := pod.Annotations[fmt.Sprintf(util.IPPoolAnnotationTemplate, podNet.ProviderName)]
 	if ippoolStr == "" {
 		ns, err := c.namespacesLister.Get(pod.Namespace)
@@ -1645,7 +1676,7 @@ func (c *Controller) acquireAddress(pod *v1.Pod, podNet *kubeovnNet) (string, st
 		}
 	}
 
-	// Random allocate
+	// Random allocate 随机分配一个ip地址
 	if pod.Annotations[fmt.Sprintf(util.IPAddressAnnotationTemplate, podNet.ProviderName)] == "" &&
 		ippoolStr == "" {
 		var skippedAddrs []string

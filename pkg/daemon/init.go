@@ -86,6 +86,7 @@ func InitNodeGateway(config *Configuration) error {
 		klog.Errorf("failed to get ip addr with mask %s, %v", ip, err)
 		return err
 	}
+	// 配置 ovn0 网卡 address
 	return configureNodeNic(config.KubeClient, config.NodeName, portName, ipAddr, gw, cidr, mac, config.MTU)
 }
 
