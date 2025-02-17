@@ -45,6 +45,7 @@ func CmdMain() {
 		util.LogFatalAndExit(err, "failed to initialize config")
 	}
 
+	// node annotation 增加 chassis id
 	if err := Retry(util.ChassisRetryMaxTimes, util.ChassisCniDaemonRetryInterval, initChassisAnno, config); err != nil {
 		util.LogFatalAndExit(err, "failed to initialize ovn chassis annotation")
 	}
@@ -83,12 +84,17 @@ func CmdMain() {
 		util.LogFatalAndExit(err, "failed to create controller")
 	}
 	klog.Info("start daemon controller")
+	// controller的处理函数
 	go ctl.Run(stopCh)
+
+	// 与cni 二进制可执行文件进行交互
 	go daemon.RunServer(config, ctl)
+	// /etc/cni/net.d/下放入配置文件
 	if err := mvCNIConf(config.CniConfDir, config.CniConfFile, config.CniConfName); err != nil {
 		util.LogFatalAndExit(err, "failed to mv cni config file")
 	}
 
+	// kube-ovn-ping 使用
 	addr := util.GetDefaultListenAddr()
 	if config.EnableVerboseConnCheck {
 		go func() {

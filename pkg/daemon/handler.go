@@ -68,6 +68,7 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 		}
 		return
 	}
+	// 查询第一个provider的subnet
 	klog.V(5).Infof("request body is %v", podRequest)
 	podSubnet, exist := csh.providerExists(podRequest.Provider)
 	if !exist {
@@ -103,6 +104,7 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 			}
 			return
 		}
+		// 是否已经分配了ip地址
 		if pod.Annotations[fmt.Sprintf(util.AllocatedAnnotationTemplate, podRequest.Provider)] != "true" {
 			klog.Infof("wait address for pod %s/%s provider %s", podRequest.PodNamespace, podRequest.PodName, podRequest.Provider)
 			// wait controller assign an address
@@ -139,6 +141,7 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 			}
 			return
 		}
+		// 路由
 		if s := pod.Annotations[fmt.Sprintf(util.RoutesAnnotationTemplate, podRequest.Provider)]; s != "" {
 			if err = json.Unmarshal([]byte(s), &routes); err != nil {
 				errMsg := fmt.Errorf("invalid routes for pod %s/%s: %v", pod.Namespace, pod.Name, err)
@@ -149,13 +152,16 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 				return
 			}
 		}
+		// 接口名称
 		if ifName = podRequest.IfName; ifName == "" {
 			ifName = "eth0"
 		}
 
 		switch {
+		// 硬件卸载
 		case podRequest.DeviceID != "":
 			nicType = util.OffloadType
+			// dpdk
 		case podRequest.VhostUserSocketVolumeName != "":
 			nicType = util.DpdkType
 			if err = createShortSharedDir(pod, podRequest.VhostUserSocketVolumeName, csh.Config.KubeletDir); err != nil {
@@ -166,9 +172,11 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 				return
 			}
 		default:
+			// veth
 			nicType = pod.Annotations[fmt.Sprintf(util.PodNicAnnotationTemplate, podRequest.Provider)]
 		}
 
+		// 默认路由
 		switch pod.Annotations[fmt.Sprintf(util.DefaultRouteAnnotationTemplate, podRequest.Provider)] {
 		case "true":
 			isDefaultRoute = true
@@ -178,6 +186,7 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 			isDefaultRoute = ifName == "eth0"
 		}
 
+		// 等待路由配置完成
 		if isDefaultRoute && pod.Annotations[fmt.Sprintf(util.RoutedAnnotationTemplate, podRequest.Provider)] != "true" && strings.HasSuffix(podRequest.Provider, util.OvnProvider) {
 			klog.Infof("wait route ready for pod %s/%s provider %s", podRequest.PodNamespace, podRequest.PodName, podRequest.Provider)
 			cniWaitRouteResult.WithLabelValues(nodeName).Inc()
@@ -192,6 +201,7 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 		break
 	}
 
+	// 20 次超时后，pod ovn ip仍然没有配置完成
 	if pod.Annotations[fmt.Sprintf(util.AllocatedAnnotationTemplate, podRequest.Provider)] != "true" {
 		err := fmt.Errorf("no address allocated to pod %s/%s provider %s, please see kube-ovn-controller logs to find errors", pod.Namespace, pod.Name, podRequest.Provider)
 		klog.Error(err)
@@ -204,6 +214,7 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 	if subnet == "" && podSubnet != nil {
 		subnet = podSubnet.Name
 	}
+	// 更新ipcr
 	if err := csh.UpdateIPCr(podRequest, subnet, ip); err != nil {
 		if err := resp.WriteHeaderAndEntity(http.StatusInternalServerError, request.CniResponse{Err: err.Error()}); err != nil {
 			klog.Errorf("failed to write response, %v", err)
@@ -211,6 +222,7 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 		return
 	}
 
+	// 路由没有配置完成
 	if isDefaultRoute && pod.Annotations[fmt.Sprintf(util.RoutedAnnotationTemplate, podRequest.Provider)] != "true" && strings.HasSuffix(podRequest.Provider, util.OvnProvider) {
 		err := fmt.Errorf("route is not ready for pod %s/%s provider %s, please see kube-ovn-controller logs to find errors", pod.Namespace, pod.Name, podRequest.Provider)
 		klog.Error(err)
@@ -269,6 +281,7 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 			mtu = int(podSubnet.Spec.Mtu)
 		} else {
 			if providerNetwork != "" && !podSubnet.Spec.LogicalGateway && !podSubnet.Spec.U2OInterconnection {
+
 				node, err := csh.Controller.nodesLister.Get(csh.Config.NodeName)
 				if err != nil {
 					errMsg := fmt.Errorf("failed to get node %s: %v", csh.Config.NodeName, err)
@@ -295,10 +308,12 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 		}
 
 		macAddr = pod.Annotations[fmt.Sprintf(util.MacAddressAnnotationTemplate, podRequest.Provider)]
+		// 加入ovs中，同时在container的ns中配置网路地址
 		klog.Infof("create container interface %s mac %s, ip %s, cidr %s, gw %s, custom routes %v", ifName, macAddr, ipAddr, cidr, gw, routes)
 		podNicName = ifName
 		switch nicType {
 		case util.InternalType:
+			// ovs的internal接口
 			podNicName, routes, err = csh.configureNicWithInternalPort(podRequest.PodName, podRequest.PodNamespace, podRequest.Provider, podRequest.NetNs, podRequest.ContainerID, ifName, macAddr, mtu, ipAddr, gw, isDefaultRoute, detectIPConflict, routes, podRequest.DNS.Nameservers, podRequest.DNS.Search, ingress, egress, podRequest.DeviceID, nicType, latency, limit, loss, jitter, gatewayCheckMode, u2oInterconnectionIP)
 		case util.DpdkType:
 			err = csh.configureDpdkNic(podRequest.PodName, podRequest.PodNamespace, podRequest.Provider, podRequest.NetNs, podRequest.ContainerID, ifName, macAddr, mtu, ipAddr, gw, ingress, egress, getShortSharedDir(pod.UID, podRequest.VhostUserSocketVolumeName), podRequest.VhostUserSocketName)

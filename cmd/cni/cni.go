@@ -50,14 +50,17 @@ func cmdAdd(args *skel.CmdArgs) error {
 		netConf.Provider = util.OvnProvider
 	}
 
+	// CNI 发送container的info给 server端，等待server处理
 	client := request.NewCniServerClient(netConf.ServerSocket)
 	response, err := client.Add(request.CniRequest{
-		CniType:                   netConf.Type,
-		PodName:                   podName,
-		PodNamespace:              podNamespace,
-		ContainerID:               args.ContainerID,
-		NetNs:                     args.Netns,
-		IfName:                    args.IfName,
+		CniType: netConf.Type,
+		// container信息
+		PodName:      podName,
+		PodNamespace: podNamespace,
+		ContainerID:  args.ContainerID,
+		NetNs:        args.Netns,
+		IfName:       args.IfName,
+		// 配置文件指定
 		Provider:                  netConf.Provider,
 		Routes:                    netConf.Routes,
 		DNS:                       netConf.DNS,
@@ -208,6 +211,7 @@ func loadNetConf(bytes []byte) (*netconf.NetConf, string, error) {
 		return nil, "", types.NewError(types.ErrInvalidNetworkConfig, "Invalid Configuration", fmt.Sprintf("server_socket is required in cni.conf, %+v", n))
 	}
 
+	// provider 赋值默认值
 	if n.Provider == "" {
 		n.Provider = util.OvnProvider
 	}

@@ -44,6 +44,7 @@ func createHandler(csh *cniServerHandler) http.Handler {
 		Produces(restful.MIME_JSON)
 	wsContainer.Add(ws)
 
+	// 处理函数
 	ws.Route(
 		ws.POST("/add").
 			To(csh.handleAdd).

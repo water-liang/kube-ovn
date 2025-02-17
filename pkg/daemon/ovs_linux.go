@@ -227,6 +227,7 @@ func configureContainerNic(nicName, ifName, ipAddr, gateway string, isDefaultRou
 		return nil, err
 	}
 
+	// 移动到ns
 	if err = netlink.LinkSetNsFd(containerLink, int(netns.Fd())); err != nil {
 		return nil, fmt.Errorf("failed to move link to netns: %v", err)
 	}
@@ -255,12 +256,15 @@ func configureContainerNic(nicName, ifName, ipAddr, gateway string, isDefaultRou
 		}
 
 		if nicType == util.InternalType {
+			//创建dummy网卡
 			if err = addAdditionalNic(ifName); err != nil {
 				return err
 			}
+			// 配置ipaddr
 			if err = configureAdditionalNic(ifName, ipAddr); err != nil {
 				return err
 			}
+			// 配置mac mtu等
 			if err = configureNic(nicName, ipAddr, macAddr, mtu, detectIPConflict, false, false); err != nil {
 				return err
 			}
