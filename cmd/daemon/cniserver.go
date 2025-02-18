@@ -66,6 +66,7 @@ func CmdMain() {
 	ctrl.SetLogger(klog.NewKlogr())
 	ctx := signals.SetupSignalHandler()
 	stopCh := ctx.Done()
+	// 此处pod informer只watch 本地node的pod
 	podInformerFactory := kubeinformers.NewSharedInformerFactoryWithOptions(config.KubeClient, 0,
 		kubeinformers.WithTweakListOptions(func(listOption *v1.ListOptions) {
 			listOption.FieldSelector = fmt.Sprintf("spec.nodeName=%s", config.NodeName)

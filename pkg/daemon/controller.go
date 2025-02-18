@@ -604,12 +604,18 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 	klog.Info("Started workers")
 	go wait.Until(c.loopOvn0Check, 5*time.Second, stopCh)
 	go wait.Until(c.loopOvnExt0Check, 5*time.Second, stopCh)
+	// provider network
 	go wait.Until(c.runAddOrUpdateProviderNetworkWorker, time.Second, stopCh)
 	go wait.Until(c.runDeleteProviderNetworkWorker, time.Second, stopCh)
+
+	// 维护本地的路由表
 	go wait.Until(c.runSubnetWorker, time.Second, stopCh)
+	// 主要处理 pod 的qos
 	go wait.Until(c.runPodWorker, time.Second, stopCh)
+
 	go wait.Until(c.runGateway, 3*time.Second, stopCh)
 	go wait.Until(c.loopEncapIPCheck, 3*time.Second, stopCh)
+
 	go wait.Until(c.ovnMetricsUpdate, 3*time.Second, stopCh)
 	go wait.Until(func() {
 		if err := c.reconcileRouters(nil); err != nil {

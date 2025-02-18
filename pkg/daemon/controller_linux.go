@@ -301,6 +301,9 @@ func (c *Controller) reconcileRouters(event *subnetEvent) error {
 		}
 	}
 
+	// ovn0的路由更新
+
+	// 默认网关
 	gateway, ok := node.Annotations[util.GatewayAnnotation]
 	if !ok {
 		klog.Errorf("annotation for node %s ovn.kubernetes.io/gateway not exists", node.Name)
@@ -625,15 +628,18 @@ func (c *Controller) handlePod(key string) error {
 
 	// set default nic bandwidth
 	ifaceID := ovs.PodNameToPortName(podName, pod.Namespace, util.OvnProvider)
+	//ingress
 	err = ovs.SetInterfaceBandwidth(podName, pod.Namespace, ifaceID, pod.Annotations[util.EgressRateAnnotation], pod.Annotations[util.IngressRateAnnotation])
 	if err != nil {
 		return err
 	}
+	// ovs mirror
 	err = ovs.ConfigInterfaceMirror(c.config.EnableMirror, pod.Annotations[util.MirrorControlAnnotation], ifaceID)
 	if err != nil {
 		return err
 	}
 	// set linux-netem qos
+	// egress
 	err = ovs.SetNetemQos(podName, pod.Namespace, ifaceID, pod.Annotations[util.NetemQosLatencyAnnotation], pod.Annotations[util.NetemQosLimitAnnotation], pod.Annotations[util.NetemQosLossAnnotation], pod.Annotations[util.NetemQosJitterAnnotation])
 	if err != nil {
 		return err
