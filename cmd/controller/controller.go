@@ -90,10 +90,12 @@ func CmdMain() {
 		<-ctx.Done()
 	}()
 
+	// event 时间记录
 	recorder := record.NewBroadcaster().NewRecorder(scheme.Scheme, apiv1.EventSource{
 		Component: ovnLeaderResource,
 		Host:      os.Getenv(util.HostnameEnv),
 	})
+	// 
 	rl, err := resourcelock.NewFromKubeconfig("leases",
 		config.PodNamespace,
 		ovnLeaderResource,
